@@ -1,126 +1,804 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="utf-8">
-    <!-- Add this if you want: link rel="manifest" href="manifest.webmanifest"  -->
-    <meta name="viewport" content="user-scalable=no, width=device-width, initial-scale=1.0" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <title>Bus finder Web App</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="description" content="Real-time London bus arrival tracker powered by TfL Open Data" />
+  <title>London Bus Tracker</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
-    <script src="https://code.jquery.com/jquery-3.4.1.js"></script>
-    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+    :root {
+      --tfl-blue:   #0019a8;
+      --tfl-red:    #dc241f;
+      --tfl-dark:   #00094a;
+      --bg:         #f0f2f8;
+      --surface:    #ffffff;
+      --surface2:   #eef0f8;
+      --text:       #1a1a2e;
+      --text-muted: #5a5f7a;
+      --border:     #d0d4e8;
+      --shadow:     0 2px 12px rgba(0,25,168,0.10);
+      --shadow-lg:  0 6px 28px rgba(0,25,168,0.16);
+      --radius:     12px;
+      --radius-sm:  8px;
+      --transition: 0.2s ease;
+    }
 
-    <link rel="stylesheet" href="bus.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="bus.js"></script>
+    html { font-size: 16px; }
 
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                   'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ───────────────────────────────────────────────── */
+    header {
+      background: var(--tfl-blue);
+      color: #fff;
+      padding: 0 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+
+    .header-inner {
+      max-width: 720px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      height: 56px;
+    }
+
+    .header-logo {
+      width: 36px;
+      height: 36px;
+      background: var(--tfl-red);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    header h1 span {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 400;
+      opacity: 0.75;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    /* ── Status Bar ───────────────────────────────────────────── */
+    #status-bar {
+      background: var(--tfl-dark);
+      color: rgba(255,255,255,0.85);
+      font-size: 0.78rem;
+      text-align: center;
+      padding: 0.4rem 1rem;
+      min-height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: background var(--transition);
+    }
+
+    #status-bar.error   { background: #8b0000; }
+    #status-bar.success { background: #004d00; }
+    #status-bar.warning { background: #7a4800; }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.7;
+      flex-shrink: 0;
+    }
+
+    /* ── Main Content ─────────────────────────────────────────── */
+    main {
+      flex: 1;
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2rem;
+    }
+
+    /* ── Section Headings ─────────────────────────────────────── */
+    .section-heading {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .section-heading::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Spinner ──────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    .spinner-blue {
+      border-color: rgba(0,25,168,0.2);
+      border-top-color: var(--tfl-blue);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ── Loading Placeholder ──────────────────────────────────── */
+    .loading-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      padding: 3rem 1rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .loading-placeholder .spinner {
+      width: 36px;
+      height: 36px;
+      border-width: 3.5px;
+    }
+
+    /* ── Stop Cards ───────────────────────────────────────────── */
+    #stops-section { margin-bottom: 1.5rem; }
+
+    #stops-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.65rem;
+    }
+
+    .stop-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      cursor: pointer;
+      transition: border-color var(--transition), box-shadow var(--transition),
+                  transform var(--transition), background var(--transition);
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stop-card::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      background: var(--tfl-blue);
+      opacity: 0;
+      transition: opacity var(--transition);
+    }
+
+    .stop-card:hover {
+      border-color: var(--tfl-blue);
+      box-shadow: var(--shadow);
+      transform: translateY(-1px);
+    }
+
+    .stop-card:hover::before { opacity: 1; }
+
+    .stop-card.active {
+      border-color: var(--tfl-blue);
+      background: #e8ecff;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .stop-card.active::before { opacity: 1; }
+
+    .stop-name {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .stop-distance {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .stop-distance svg {
+      width: 11px;
+      height: 11px;
+      opacity: 0.6;
+    }
+
+    /* ── Arrivals Section ─────────────────────────────────────── */
+    #arrivals-section { display: none; }
+    #arrivals-section.visible { display: block; }
+
+    .arrivals-header {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .arrivals-stop-name {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--tfl-blue);
+      line-height: 1.3;
+    }
+
+    .arrivals-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .refresh-info {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-align: right;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .refresh-countdown {
+      display: inline-block;
+      font-weight: 700;
+      color: var(--tfl-blue);
+    }
+
+    /* ── Arrival Cards ────────────────────────────────────────── */
+    #arrivals-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .arrival-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.85rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      animation: fadeIn 0.25s ease;
+      transition: box-shadow var(--transition);
+    }
+
+    .arrival-card:hover { box-shadow: var(--shadow); }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .route-badge {
+      background: var(--tfl-red);
+      color: #fff;
+      font-size: 0.85rem;
+      font-weight: 800;
+      padding: 0.3rem 0.6rem;
+      border-radius: 6px;
+      min-width: 44px;
+      text-align: center;
+      letter-spacing: -0.01em;
+      flex-shrink: 0;
+      line-height: 1.2;
+    }
+
+    .arrival-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .arrival-destination {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .arrival-stop-name {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .arrival-time {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .arrival-mins {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--tfl-blue);
+      line-height: 1;
+    }
+
+    .arrival-mins.due {
+      color: var(--tfl-red);
+    }
+
+    .arrival-mins-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.1rem;
+    }
+
+    /* ── Empty / Error States ─────────────────────────────────── */
+    .empty-state {
+      background: var(--surface);
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .empty-state .icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.75rem;
+      display: block;
+    }
+
+    .empty-state p {
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .empty-state strong {
+      display: block;
+      font-size: 1rem;
+      color: var(--text);
+      margin-bottom: 0.3rem;
+    }
+
+    /* ── Back Button ──────────────────────────────────────────── */
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: none;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 0.45rem 0.85rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      margin-bottom: 1rem;
+      transition: border-color var(--transition), color var(--transition),
+                  background var(--transition);
+    }
+
+    .back-btn:hover {
+      border-color: var(--tfl-blue);
+      color: var(--tfl-blue);
+      background: #e8ecff;
+    }
+
+    /* ── Footer ───────────────────────────────────────────────── */
+    footer {
+      background: var(--tfl-dark);
+      color: rgba(255,255,255,0.5);
+      text-align: center;
+      font-size: 0.72rem;
+      padding: 0.85rem 1rem;
+      letter-spacing: 0.02em;
+    }
+
+    footer a {
+      color: rgba(255,255,255,0.7);
+      text-decoration: none;
+    }
+
+    footer a:hover { color: #fff; }
+
+    /* ── Responsive ───────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      #stops-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .arrival-mins { font-size: 1.35rem; }
+      .arrivals-stop-name { font-size: 0.95rem; }
+    }
+
+    @media (max-width: 340px) {
+      #stops-grid { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
-
 <body>
 
-    <div id="mapid"></div>
-    <div id="bus_selected"></div>
-    <div id="bus_summary"> </div>
-    <table style="width:94%">
-        <tr>
-            <td>
+  <!-- ── Header ──────────────────────────────────────────────── -->
+  <header>
+    <div class="header-inner">
+      <div class="header-logo">🚌</div>
+      <h1>
+        London Bus Tracker
+        <span>Real-time arrivals · TfL Open Data</span>
+      </h1>
+    </div>
+  </header>
 
-                <div id="accordion">
+  <!-- ── Status Bar ──────────────────────────────────────────── -->
+  <div id="status-bar">
+    <div class="spinner"></div>
+    <span id="status-text">Requesting location…</span>
+  </div>
 
-                    <h3 id="bus_0_title"></h3>
-                    <div>
-                        <p id="bus_0_p"></p>
-                    </div>
-                    <h3 id="bus_1_title"></h3>
-                    <div>
-                        <p id="bus_1_p"></p>
-                    </div>
-                    <h3 id="bus_2_title"></h3>
-                    <div>
-                        <p id="bus_2_p"></p>
-                    </div>
-                    <h3 id="bus_3_title"></h3>
-                    <div>
-                        <p id="bus_3_p"></p>
-                    </div>
-                    <h3 id="bus_4_title"></h3>
-                    <div>
-                        <p id="bus_4_p"></p>
-                    </div>
-                    <h3 id="bus_5_title"></h3>
-                    <div>
-                        <p id="bus_5_p"></p>
-                    </div>
-                    <h3 id="bus_6_title"></h3>
-                    <div>
-                        <p id="bus_6_p"></p>
-                    </div>
-                    <h3 id="bus_7_title"></h3>
-                    <div>
-                        <p id="bus_7_p"></p>
-                    </div>
-                    <h3 id="bus_8_title"></h3>
-                    <div>
-                        <p id="bus_8_p"></p>
-                    </div>
-                    <h3 id="bus_9_title"></h3>
-                    <div>
-                        <p id="bus_9_p"></p>
-                    </div>
-                    <h3 id="bus_10_title"></h3>
-                    <div>
-                        <p id="bus_10_p"></p>
-                    </div>
-                    <h3 id="bus_11_title"></h3>
-                    <div>
-                        <p id="bus_11_p"></p>
-                    </div>
-                    <h3 id="bus_12_title"></h3>
-                    <div>
-                        <p id="bus_12_p"></p>
-                    </div>
-                    <h3 id="bus_13_title"></h3>
-                    <div>
-                        <p id="bus_13_p"></p>
-                    </div>
-                    <h3 id="bus_14_title"></h3>
-                    <div>
-                        <p id="bus_14_p"></p>
-                    </div>
-                    <h3 id="bus_15_title"></h3>
-                    <div>
-                        <p id="bus_15_p"></p>
-                    </div>
-                    <h3 id="bus_16_title"></h3>
-                    <div>
-                        <p id="bus_16_p"></p>
-                    </div>
-                    <h3 id="bus_17_title"></h3>
-                    <div>
-                        <p id="bus_17_p"></p>
-                    </div>
-                    <h3 id="bus_18_title"></h3>
-                    <div>
-                        <p id="bus_18_p"></p>
-                    </div>
-                    <h3 id="bus_19_title"></h3>
-                    <div>
-                        <p id="bus_19_p"></p>
-                    </div>
-                    <h3 id="bus_20_title"></h3>
-                    <div>
-                        <p id="bus_20_p"></p>
-                    </div>
+  <!-- ── Main ────────────────────────────────────────────────── -->
+  <main>
 
-                </div>
+    <!-- Nearby Stops -->
+    <section id="stops-section">
+      <div class="section-heading">Nearby stops</div>
+      <div id="stops-grid">
+        <div class="loading-placeholder">
+          <div class="spinner spinner-blue"></div>
+          <span>Finding nearby stops…</span>
+        </div>
+      </div>
+    </section>
 
-            </td>
-        </tr>
-    </table>
+    <!-- Arrivals -->
+    <section id="arrivals-section">
+      <button class="back-btn" id="back-btn">
+        ← Back to stops
+      </button>
 
+      <div class="arrivals-header">
+        <div>
+          <div class="arrivals-stop-name" id="arrivals-stop-name">Stop name</div>
+          <div class="arrivals-meta" id="arrivals-meta"></div>
+        </div>
+        <div class="refresh-info">
+          Refreshes in<br>
+          <span class="refresh-countdown" id="refresh-countdown">9</span>s
+        </div>
+      </div>
+
+      <div class="section-heading">Live arrivals</div>
+      <div id="arrivals-list">
+        <div class="loading-placeholder">
+          <div class="spinner spinner-blue"></div>
+          <span>Loading arrivals…</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────────── -->
+  <footer>
+    Powered by <a href="https://api.tfl.gov.uk" target="_blank" rel="noopener">TfL Open Data</a>
+    &nbsp;·&nbsp; &copy; London Bus Tracker
+  </footer>
+
+  <script>
+    // ── State ──────────────────────────────────────────────────
+    const state = {
+      stops: [],
+      selectedStop: null,
+      refreshTimer: null,
+      countdownTimer: null,
+      countdown: 9,
+      lastRefresh: null,
+    };
+
+    // ── DOM refs ───────────────────────────────────────────────
+    const statusBar       = document.getElementById('status-bar');
+    const statusText      = document.getElementById('status-text');
+    const stopsGrid       = document.getElementById('stops-grid');
+    const stopsSection    = document.getElementById('stops-section');
+    const arrivalsSection = document.getElementById('arrivals-section');
+    const arrivalsStopName= document.getElementById('arrivals-stop-name');
+    const arrivalsMeta    = document.getElementById('arrivals-meta');
+    const arrivalsList    = document.getElementById('arrivals-list');
+    const backBtn         = document.getElementById('back-btn');
+    const refreshCountdown= document.getElementById('refresh-countdown');
+
+    // ── Utilities ──────────────────────────────────────────────
+    function setStatus(msg, type = '') {
+      statusBar.className = type;
+      statusText.textContent = msg;
+      // Show spinner only when no type (neutral/loading)
+      const spinner = statusBar.querySelector('.spinner');
+      if (spinner) spinner.style.display = type ? 'none' : 'inline-block';
+    }
+
+    function fmtDist(miles) {
+      if (miles < 0.1) return Math.round(miles * 5280) + ' ft';
+      return miles.toFixed(2) + ' mi';
+    }
+
+    function fmtMins(seconds) {
+      return Math.round(seconds / 60);
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // ── Geolocation ────────────────────────────────────────────
+    function init() {
+      if (!navigator.geolocation) {
+        setStatus('Geolocation is not supported by your browser.', 'error');
+        showStopsError('Your browser does not support geolocation.');
+        return;
+      }
+      setStatus('Requesting location…');
+      navigator.geolocation.getCurrentPosition(onPosition, onGeoError, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000,
+      });
+    }
+
+    function onGeoError(err) {
+      const msgs = {
+        1: 'Location permission denied. Please allow location access and reload.',
+        2: 'Location unavailable. Check your device settings.',
+        3: 'Location request timed out. Please reload and try again.',
+      };
+      const msg = msgs[err.code] || 'Could not get your location.';
+      setStatus(msg, 'error');
+      showStopsError(msg);
+    }
+
+    function onPosition(pos) {
+      const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+      setStatus(`Location found (±${Math.round(accuracy)}m) · Loading stops…`);
+      fetchStops(lat, lon);
+    }
+
+    // ── Fetch Stops ────────────────────────────────────────────
+    function fetchStops(lat, lon) {
+      fetch(`/api/stops?lat=${lat}&lon=${lon}`)
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then(data => {
+          state.stops = data;
+          if (data.length === 0) {
+            setStatus('No bus stops found within 1 mile. Are you in London?', 'warning');
+            showStopsEmpty();
+          } else {
+            setStatus(`Found ${data.length} stop${data.length !== 1 ? 's' : ''} nearby`, 'success');
+            renderStops(data);
+            // Auto-select nearest stop
+            selectStop(data[0]);
+          }
+        })
+        .catch(err => {
+          setStatus('Failed to load nearby stops. Please reload.', 'error');
+          showStopsError('Could not load nearby stops: ' + err.message);
+        });
+    }
+
+    // ── Render Stops ───────────────────────────────────────────
+    function renderStops(stops) {
+      stopsGrid.innerHTML = stops.map((s, i) => `
+        <div class="stop-card${i === 0 ? ' active' : ''}"
+             data-index="${i}"
+             role="button"
+             tabindex="0"
+             aria-label="${escHtml(s.name)}, ${fmtDist(s.distance)} away">
+          <div class="stop-name">${escHtml(s.name)}</div>
+          <div class="stop-distance">
+            <svg viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 0a5 5 0 0 0-5 5c0 3.5 5 11 5 11s5-7.5 5-11a5 5 0 0 0-5-5zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/>
+            </svg>
+            ${fmtDist(s.distance)}
+          </div>
+        </div>
+      `).join('');
+
+      stopsGrid.querySelectorAll('.stop-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const idx = parseInt(card.dataset.index, 10);
+          selectStop(state.stops[idx]);
+          stopsGrid.querySelectorAll('.stop-card').forEach(c => c.classList.remove('active'));
+          card.classList.add('active');
+        });
+        card.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            card.click();
+          }
+        });
+      });
+    }
+
+    function showStopsEmpty() {
+      stopsGrid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1">
+          <span class="icon">🗺️</span>
+          <p><strong>No stops found nearby</strong>
+          This app only works within London. Make sure you're in the TfL bus network area.</p>
+        </div>`;
+    }
+
+    function showStopsError(msg) {
+      stopsGrid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1">
+          <span class="icon">⚠️</span>
+          <p><strong>Something went wrong</strong>${escHtml(msg)}</p>
+        </div>`;
+    }
+
+    // ── Select Stop & Show Arrivals ────────────────────────────
+    function selectStop(stop) {
+      state.selectedStop = stop;
+
+      arrivalsStopName.textContent = stop.name;
+      arrivalsMeta.textContent = `Naptan: ${stop.naptan} · ${fmtDist(stop.distance)} away`;
+
+      stopsSection.style.display = 'none';
+      arrivalsSection.classList.add('visible');
+
+      clearTimers();
+      fetchArrivals();
+      startCountdown();
+    }
+
+    function goBack() {
+      clearTimers();
+      state.selectedStop = null;
+      arrivalsSection.classList.remove('visible');
+      stopsSection.style.display = '';
+      setStatus(`Found ${state.stops.length} stop${state.stops.length !== 1 ? 's' : ''} nearby`, 'success');
+    }
+
+    backBtn.addEventListener('click', goBack);
+
+    // ── Fetch Arrivals ─────────────────────────────────────────
+    function fetchArrivals() {
+      if (!state.selectedStop) return;
+      const { naptan } = state.selectedStop;
+
+      arrivalsList.innerHTML = `
+        <div class="loading-placeholder">
+          <div class="spinner spinner-blue"></div>
+          <span>Loading arrivals…</span>
+        </div>`;
+
+      fetch(`https://api.tfl.gov.uk/StopPoint/${encodeURIComponent(naptan)}/arrivals`)
+        .then(r => {
+          if (!r.ok) throw new Error(`TfL API returned ${r.status}`);
+          return r.json();
+        })
+        .then(data => {
+          state.lastRefresh = new Date();
+          renderArrivals(data);
+        })
+        .catch(err => {
+          arrivalsList.innerHTML = `
+            <div class="empty-state">
+              <span class="icon">📡</span>
+              <p><strong>Could not load arrivals</strong>${escHtml(err.message)}</p>
+            </div>`;
+        });
+    }
+
+    // ── Render Arrivals ────────────────────────────────────────
+    function renderArrivals(data) {
+      if (!data || data.length === 0) {
+        arrivalsList.innerHTML = `
+          <div class="empty-state">
+            <span class="icon">🚌</span>
+            <p><strong>No buses due</strong>There are no buses currently due at this stop.</p>
+          </div>`;
+        return;
+      }
+
+      data.sort((a, b) => a.timeToStation - b.timeToStation);
+
+      arrivalsList.innerHTML = data.map(bus => {
+        const mins = fmtMins(bus.timeToStation);
+        const isDue = mins <= 1;
+        return `
+          <div class="arrival-card">
+            <div class="route-badge">${escHtml(bus.lineName)}</div>
+            <div class="arrival-info">
+              <div class="arrival-destination">${escHtml(bus.destinationName)}</div>
+              <div class="arrival-stop-name">${escHtml(bus.stationName)}</div>
+            </div>
+            <div class="arrival-time">
+              <div class="arrival-mins${isDue ? ' due' : ''}">${isDue ? 'Due' : mins}</div>
+              <div class="arrival-mins-label">${isDue ? 'now' : 'min'}</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // ── Auto-refresh (9s) ──────────────────────────────────────
+    function startCountdown() {
+      state.countdown = 9;
+      refreshCountdown.textContent = state.countdown;
+
+      state.countdownTimer = setInterval(() => {
+        state.countdown -= 1;
+        refreshCountdown.textContent = Math.max(0, state.countdown);
+        if (state.countdown <= 0) {
+          clearInterval(state.countdownTimer);
+          fetchArrivals();
+          startCountdown();
+        }
+      }, 1000);
+    }
+
+    function clearTimers() {
+      clearInterval(state.refreshTimer);
+      clearInterval(state.countdownTimer);
+    }
+
+    // ── Boot ───────────────────────────────────────────────────
+    init();
+  </script>
 </body>
-
 </html>

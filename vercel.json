@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "functions": {
+    "api/stops.js": {
+      "memory": 128,
+      "maxDuration": 10
+    }
+  }
+}
